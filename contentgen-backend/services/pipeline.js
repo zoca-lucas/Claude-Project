@@ -13,6 +13,9 @@ const replicateService = require('./replicate');
 const minimaxService = require('./minimax');
 const ffmpegService = require('./ffmpeg');
 const storageService = require('./storage');
+const scriptParser = require('./scriptParser');
+const promptBuilder = require('./promptBuilder');
+const timestampEstimator = require('./timestampEstimator');
 
 // Retorna o servico de TTS correto baseado nas settings
 function getTTSService(settings) {
@@ -117,14 +120,28 @@ async function stepScript(videoId, jobId, project, settings) {
     return;
   }
 
-  const result = await openaiService.generateScriptWithScenes({
-    title: video.title,
-    niche: project.niche,
-    platform: project.targetPlatform,
-    description: project.description,
-    context: settings.contextText,
-    contentType: video.contentType || 'long',
-  });
+  let result;
+
+  // Se tem roteiro manual (script sem sceneData), faz parsing local
+  if (video.script && video.script.trim().length > 10) {
+    console.log(`[Pipeline] Parsing local do roteiro existente...`);
+    result = scriptParser.parseScript(video.script, {
+      title: video.title,
+      contentType: video.contentType || 'long',
+    });
+  } else if (openaiService.isConfigured()) {
+    // Se OpenAI esta configurada, usa ela para gerar roteiro do zero
+    result = await openaiService.generateScriptWithScenes({
+      title: video.title,
+      niche: project.niche,
+      platform: project.targetPlatform,
+      description: project.description,
+      context: settings.contextText,
+      contentType: video.contentType || 'long',
+    });
+  } else {
+    throw new Error('Video sem roteiro e OpenAI nao configurada. Escreva um roteiro manualmente no Creation Lab.');
+  }
 
   Video.update(videoId, {
     script: result.fullScript,
@@ -132,7 +149,7 @@ async function stepScript(videoId, jobId, project, settings) {
     status: 'script_generated',
   });
 
-  console.log(`[Pipeline] Roteiro gerado: ${result.sceneData.scenes.length} cenas (${result.tokensUsed} tokens)`);
+  console.log(`[Pipeline] Roteiro processado: ${result.sceneData.scenes.length} cenas (${result.model})`);
 }
 
 // STEP 2: Gerar audio TTS (ElevenLabs ou MiniMax)
@@ -191,10 +208,21 @@ async function stepImagePrompts(videoId, jobId, project, settings) {
     throw new Error('Video sem dados de cenas');
   }
 
-  const result = await openaiService.generateImagePrompts(video.sceneData.scenes, {
-    style: settings.imageStyle || 'cinematic',
-    niche: project.niche,
-  });
+  let result;
+
+  // Usa OpenAI se disponivel, senao usa prompt builder local
+  if (openaiService.isConfigured()) {
+    result = await openaiService.generateImagePrompts(video.sceneData.scenes, {
+      style: settings.imageStyle || 'cinematic',
+      niche: project.niche,
+    });
+  } else {
+    console.log(`[Pipeline] Usando prompt builder local (OpenAI nao configurada)`);
+    result = promptBuilder.generateImagePrompts(video.sceneData.scenes, {
+      style: settings.imageStyle || 'cinematic',
+      niche: project.niche,
+    });
+  }
 
   // Adiciona prompts ao sceneData
   const updatedSceneData = { ...video.sceneData };
@@ -278,9 +306,9 @@ async function stepImages(videoId, jobId, settings) {
   Video.update(videoId, { status: 'images_done' });
 }
 
-// STEP 5: Extrair timestamps com Whisper
+// STEP 5: Extrair timestamps (Whisper ou estimativa local)
 async function stepTimestamps(videoId, jobId) {
-  console.log(`[Pipeline] Step 5/7: Extraindo timestamps (Whisper)...`);
+  console.log(`[Pipeline] Step 5/7: Extraindo timestamps...`);
   GenerationJob.updateStatus(jobId, {
     currentStep: 'timestamps',
     progress: GenerationJob.getProgressForStep('timestamps'),
@@ -290,7 +318,18 @@ async function stepTimestamps(videoId, jobId) {
   if (audioAssets.length === 0) throw new Error('Audio nao encontrado');
 
   const audioPath = audioAssets[0].filePath;
-  const transcript = await openaiService.transcribeWithTimestamps(audioPath);
+  const video = Video.findById(videoId);
+
+  let transcript;
+
+  // Usa Whisper (OpenAI) se disponivel, senao estima localmente
+  if (openaiService.isConfigured()) {
+    console.log(`[Pipeline] Usando Whisper para timestamps precisos`);
+    transcript = await openaiService.transcribeWithTimestamps(audioPath);
+  } else {
+    console.log(`[Pipeline] Usando estimativa local de timestamps (OpenAI nao configurada)`);
+    transcript = await timestampEstimator.estimateFromAudio(audioPath, video.script || '');
+  }
 
   // Salva arquivo de transcricao com timestamps
   const transcriptPath = await storageService.saveFile(
@@ -321,7 +360,8 @@ async function stepTimestamps(videoId, jobId) {
     });
   }
 
-  console.log(`[Pipeline] Timestamps extraidos: ${transcript.words?.length || 0} palavras, ${transcript.duration?.toFixed(1)}s`);
+  const method = openaiService.isConfigured() ? 'Whisper' : 'estimativa local';
+  console.log(`[Pipeline] Timestamps gerados (${method}): ${transcript.words?.length || 0} palavras, ${transcript.duration?.toFixed(1)}s`);
 }
 
 // STEP 6: Montar video (FFmpeg slideshow OU MiniMax image-to-video)

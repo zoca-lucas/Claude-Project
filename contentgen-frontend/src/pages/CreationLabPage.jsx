@@ -529,10 +529,10 @@ export default function CreationLabPage() {
               <h3 className="text-xs font-medium text-gray-400 mb-3">Etapas do pipeline</h3>
               <div className="space-y-2">
                 {[
-                  { label: 'Gerar narraocao (TTS)', status: services?.elevenlabs || services?.minimax },
-                  { label: 'Gerar prompts de imagem', status: services?.openai },
+                  { label: 'Gerar narracao (TTS)', status: services?.elevenlabs || services?.minimax },
+                  { label: 'Gerar prompts de imagem', status: true, note: services?.openai ? 'OpenAI' : 'Local' },
                   { label: 'Gerar imagens por cena', status: services?.replicate || services?.minimax },
-                  { label: 'Transcrever com timestamps (Whisper)', status: services?.openai },
+                  { label: 'Gerar timestamps para legendas', status: true, note: services?.openai ? 'Whisper' : 'Estimativa local' },
                   { label: 'Montar video (FFmpeg)', status: services?.ffmpeg },
                   { label: 'Gravar legendas estilizadas', status: services?.ffmpeg },
                 ].map((item, i) => (
@@ -542,7 +542,10 @@ export default function CreationLabPage() {
                     ) : (
                       <AlertCircle className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
                     )}
-                    <span className={item.status ? 'text-gray-300' : 'text-gray-500'}>{item.label}</span>
+                    <span className={item.status ? 'text-gray-300' : 'text-gray-500'}>
+                      {item.label}
+                      {item.note && <span className="text-gray-500 ml-1">({item.note})</span>}
+                    </span>
                   </div>
                 ))}
               </div>

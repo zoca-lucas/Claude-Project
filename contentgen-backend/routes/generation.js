@@ -42,9 +42,9 @@ router.post('/videos/:id/generate', async (req, res, next) => {
     // Busca settings para verificar providers
     const settings = ProjectSettings.findByProjectId(project.id);
 
-    // Verifica servicos necessarios (OpenAI sempre necessario para roteiro)
-    if (!openaiService.isConfigured()) {
-      throw new AppError('OPENAI_API_KEY nao configurada', 400);
+    // Verifica se tem roteiro (necessario se OpenAI nao esta configurada)
+    if (!video.script && !openaiService.isConfigured()) {
+      throw new AppError('Video sem roteiro. Escreva um roteiro manualmente no Creation Lab (OpenAI nao configurada).', 400);
     }
 
     // Verifica TTS provider
@@ -142,9 +142,8 @@ router.get('/ai/services-status', (req, res) => {
     replicate,
     minimax,
     ffmpeg,
-    // Pelo menos um TTS + um image provider + ffmpeg + openai
-    allConfigured: openai &&
-                   (elevenlabs || minimax) &&
+    // Pelo menos um TTS + um image provider + ffmpeg (OpenAI agora eh opcional)
+    allConfigured: (elevenlabs || minimax) &&
                    (replicate || minimax) &&
                    ffmpeg,
   });

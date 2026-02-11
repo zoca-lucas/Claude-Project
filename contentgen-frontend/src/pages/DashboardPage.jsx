@@ -101,9 +101,6 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="hidden md:flex items-center gap-3 text-xs">
-              <span className={services.openai ? 'text-green-400' : 'text-red-400'}>
-                {services.openai ? '●' : '○'} OpenAI
-              </span>
               <span className={(services.elevenlabs || services.minimax) ? 'text-green-400' : 'text-red-400'}>
                 {(services.elevenlabs || services.minimax) ? '●' : '○'} TTS
               </span>
@@ -113,6 +110,9 @@ export default function DashboardPage() {
               <span className={services.ffmpeg ? 'text-green-400' : 'text-red-400'}>
                 {services.ffmpeg ? '●' : '○'} FFmpeg
               </span>
+              {services.openai && (
+                <span className="text-green-400">● OpenAI</span>
+              )}
             </div>
           </div>
         </div>

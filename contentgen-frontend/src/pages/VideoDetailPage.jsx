@@ -137,7 +137,7 @@ export default function VideoDetailPage() {
     )
   }
 
-  const canGenerate = services?.allConfigured && video.status === 'pending'
+  const canGenerate = services?.allConfigured && (video.status === 'pending' || video.status === 'script_generated')
   const canRetry = video.status === 'error'
   const isActive = isGenerating(video.status)
   const isDone = video.status === 'done'
@@ -239,20 +239,20 @@ export default function VideoDetailPage() {
                 <h3 className="text-sm font-semibold text-amber-400">Servicos</h3>
               </div>
               <ul className="text-xs text-gray-400 space-y-1">
-                <li className={services?.openai ? 'text-green-400' : 'text-red-400'}>
-                  {services?.openai ? '✓' : '✗'} OpenAI (Roteiro + Whisper)
+                <li className={(services?.elevenlabs || services?.minimax) ? 'text-green-400' : 'text-red-400'}>
+                  {(services?.elevenlabs || services?.minimax) ? '✓' : '✗'} TTS (Narracao)
                 </li>
-                <li className={services?.elevenlabs ? 'text-green-400' : 'text-red-400'}>
-                  {services?.elevenlabs ? '✓' : '✗'} ElevenLabs (TTS)
-                </li>
-                <li className={services?.replicate ? 'text-green-400' : 'text-red-400'}>
-                  {services?.replicate ? '✓' : '✗'} Replicate (Imagens)
-                </li>
-                <li className={services?.minimax ? 'text-green-400' : 'text-gray-500'}>
-                  {services?.minimax ? '✓' : '○'} MiniMax (TTS/Image/Video)
+                <li className={(services?.replicate || services?.minimax) ? 'text-green-400' : 'text-red-400'}>
+                  {(services?.replicate || services?.minimax) ? '✓' : '✗'} Imagens
                 </li>
                 <li className={services?.ffmpeg ? 'text-green-400' : 'text-red-400'}>
                   {services?.ffmpeg ? '✓' : '✗'} FFmpeg (Montagem)
+                </li>
+                <li className={services?.openai ? 'text-green-400' : 'text-gray-500'}>
+                  {services?.openai ? '✓' : '○'} OpenAI (Opcional)
+                </li>
+                <li className={services?.minimax ? 'text-green-400' : 'text-gray-500'}>
+                  {services?.minimax ? '✓' : '○'} MiniMax (TTS/Image/Video)
                 </li>
               </ul>
             </div>
