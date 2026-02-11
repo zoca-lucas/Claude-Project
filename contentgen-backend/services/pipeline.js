@@ -1,5 +1,6 @@
 // Pipeline orchestrator - Coordena todas as etapas de geracao de video
 // Etapas: Script → Audio → Image Prompts → Images → Timestamps → Assembly → Captions
+// Suporta multiplos providers: ElevenLabs/MiniMax (TTS), Replicate/MiniMax (imagens), FFmpeg/MiniMax (video)
 const path = require('path');
 const Video = require('../models/Video');
 const GenerationJob = require('../models/GenerationJob');
@@ -9,8 +10,25 @@ const Project = require('../models/Project');
 const openaiService = require('./openai');
 const elevenlabsService = require('./elevenlabs');
 const replicateService = require('./replicate');
+const minimaxService = require('./minimax');
 const ffmpegService = require('./ffmpeg');
 const storageService = require('./storage');
+
+// Retorna o servico de TTS correto baseado nas settings
+function getTTSService(settings) {
+  if (settings.ttsProvider === 'minimax' && minimaxService.isConfigured()) {
+    return { service: minimaxService, provider: 'minimax' };
+  }
+  return { service: elevenlabsService, provider: 'elevenlabs' };
+}
+
+// Retorna o servico de imagem correto baseado nas settings
+function getImageService(settings) {
+  if (settings.imageProvider === 'minimax' && minimaxService.isConfigured()) {
+    return { service: minimaxService, provider: 'minimax' };
+  }
+  return { service: replicateService, provider: 'replicate' };
+}
 
 // Executa o pipeline completo de geracao de video
 async function runPipeline(videoId) {
@@ -24,7 +42,11 @@ async function runPipeline(videoId) {
 
   // Cria job de geracao
   const job = GenerationJob.create(videoId);
+
+  const tts = getTTSService(settings);
+  const img = getImageService(settings);
   console.log(`[Pipeline] Iniciando geracao do video #${videoId} (job #${job.id})`);
+  console.log(`[Pipeline] Providers: TTS=${tts.provider}, Image=${img.provider}, Video=${settings.videoProvider || 'ffmpeg'}`);
 
   // Cria diretorios de storage
   storageService.createVideoDirectories(videoId);
@@ -45,8 +67,8 @@ async function runPipeline(videoId) {
     // STEP 5: Extrair timestamps (Whisper)
     await stepTimestamps(videoId, job.id);
 
-    // STEP 6: Montar video (FFmpeg)
-    await stepAssembly(videoId, job.id, project);
+    // STEP 6: Montar video (FFmpeg ou MiniMax image-to-video)
+    await stepAssembly(videoId, job.id, project, settings);
 
     // STEP 7: Queimar legendas
     await stepCaptions(videoId, job.id, settings);
@@ -113,7 +135,7 @@ async function stepScript(videoId, jobId, project, settings) {
   console.log(`[Pipeline] Roteiro gerado: ${result.sceneData.scenes.length} cenas (${result.tokensUsed} tokens)`);
 }
 
-// STEP 2: Gerar audio TTS
+// STEP 2: Gerar audio TTS (ElevenLabs ou MiniMax)
 async function stepAudio(videoId, jobId, settings) {
   console.log(`[Pipeline] Step 2/7: Gerando audio (TTS)...`);
   GenerationJob.updateStatus(jobId, {
@@ -124,10 +146,20 @@ async function stepAudio(videoId, jobId, settings) {
   const video = Video.findById(videoId);
   if (!video.script) throw new Error('Video sem roteiro para gerar audio');
 
-  // Gera audio com ElevenLabs
-  const audioBuffer = await elevenlabsService.generateSpeech(video.script, {
-    voiceId: settings.narrationVoiceId || undefined,
-  });
+  const { service: ttsService, provider } = getTTSService(settings);
+  console.log(`[Pipeline] TTS Provider: ${provider}`);
+
+  let audioBuffer;
+
+  if (provider === 'minimax') {
+    audioBuffer = await ttsService.generateSpeech(video.script, {
+      voiceId: settings.minimaxVoiceId || 'presenter_male',
+    });
+  } else {
+    audioBuffer = await ttsService.generateSpeech(video.script, {
+      voiceId: settings.narrationVoiceId || undefined,
+    });
+  }
 
   // Salva o arquivo
   const audioPath = await storageService.saveFile(videoId, 'audio', 'narration.mp3', audioBuffer);
@@ -143,7 +175,7 @@ async function stepAudio(videoId, jobId, settings) {
   });
 
   Video.update(videoId, { status: 'audio_generating' });
-  console.log(`[Pipeline] Audio gerado: ${(audioBuffer.length / 1024).toFixed(0)} KB`);
+  console.log(`[Pipeline] Audio gerado (${provider}): ${(audioBuffer.length / 1024).toFixed(0)} KB`);
 }
 
 // STEP 3: Gerar prompts de imagem
@@ -175,7 +207,7 @@ async function stepImagePrompts(videoId, jobId, project, settings) {
   console.log(`[Pipeline] ${result.prompts.length} prompts de imagem gerados`);
 }
 
-// STEP 4: Gerar imagens
+// STEP 4: Gerar imagens (Replicate/FLUX ou MiniMax)
 async function stepImages(videoId, jobId, settings) {
   console.log(`[Pipeline] Step 4/7: Gerando imagens...`);
   GenerationJob.updateStatus(jobId, {
@@ -188,17 +220,31 @@ async function stepImages(videoId, jobId, settings) {
 
   Video.update(videoId, { status: 'images_generating' });
 
-  const imageModel = settings.imageModel || 'flux-schnell';
+  const { service: imageService, provider } = getImageService(settings);
+  console.log(`[Pipeline] Image Provider: ${provider}`);
+
   const isShort = video.contentType === 'short';
   const width = isShort ? 720 : 1280;
   const height = isShort ? 1280 : 720;
 
-  const results = await replicateService.generateSceneImages(scenes, {
-    model: imageModel,
-    width,
-    height,
-    style: settings.imageStyle || 'cinematic',
-  });
+  let results;
+
+  if (provider === 'minimax') {
+    results = await imageService.generateSceneImages(scenes, {
+      model: 'image-01',
+      width,
+      height,
+      style: settings.imageStyle || 'cinematic',
+    });
+  } else {
+    const imageModel = settings.imageModel || 'flux-schnell';
+    results = await imageService.generateSceneImages(scenes, {
+      model: imageModel,
+      width,
+      height,
+      style: settings.imageStyle || 'cinematic',
+    });
+  }
 
   // Salva cada imagem
   for (const result of results) {
@@ -223,7 +269,7 @@ async function stepImages(videoId, jobId, settings) {
   }
 
   const successCount = results.filter(r => !r.error).length;
-  console.log(`[Pipeline] ${successCount}/${scenes.length} imagens geradas`);
+  console.log(`[Pipeline] ${successCount}/${scenes.length} imagens geradas (${provider})`);
 
   if (successCount === 0) {
     throw new Error('Nenhuma imagem foi gerada com sucesso');
@@ -270,8 +316,6 @@ async function stepTimestamps(videoId, jobId) {
 
   // Atualiza duracao do audio asset
   if (transcript.duration) {
-    const audioAsset = audioAssets[0];
-    // Nao ha update no VideoAsset, usamos metadata do job
     GenerationJob.updateStatus(jobId, {
       metadata: { audioDuration: transcript.duration, wordCount: transcript.words?.length || 0 },
     });
@@ -280,8 +324,8 @@ async function stepTimestamps(videoId, jobId) {
   console.log(`[Pipeline] Timestamps extraidos: ${transcript.words?.length || 0} palavras, ${transcript.duration?.toFixed(1)}s`);
 }
 
-// STEP 6: Montar video (FFmpeg slideshow)
-async function stepAssembly(videoId, jobId, project) {
+// STEP 6: Montar video (FFmpeg slideshow OU MiniMax image-to-video)
+async function stepAssembly(videoId, jobId, project, settings) {
   console.log(`[Pipeline] Step 6/7: Montando video...`);
   GenerationJob.updateStatus(jobId, {
     currentStep: 'assembly',
@@ -290,6 +334,18 @@ async function stepAssembly(videoId, jobId, project) {
 
   Video.update(videoId, { status: 'video_assembling' });
 
+  const videoProvider = settings.videoProvider || 'ffmpeg';
+  console.log(`[Pipeline] Video Provider: ${videoProvider}`);
+
+  if (videoProvider === 'minimax' && minimaxService.isConfigured()) {
+    await stepAssemblyMiniMax(videoId, settings);
+  } else {
+    await stepAssemblyFFmpeg(videoId);
+  }
+}
+
+// Assembly via FFmpeg (slideshow classico: audio + imagens + Ken Burns)
+async function stepAssemblyFFmpeg(videoId) {
   if (!ffmpegService.isInstalled()) {
     throw new Error('FFmpeg nao esta instalado. Execute: brew install ffmpeg');
   }
@@ -327,7 +383,84 @@ async function stepAssembly(videoId, jobId, project) {
     mimeType: 'video/mp4',
   });
 
-  console.log(`[Pipeline] Video montado: raw.mp4`);
+  console.log(`[Pipeline] Video montado via FFmpeg: raw.mp4`);
+}
+
+// Assembly via MiniMax (image-to-video: cada imagem gera um clip com movimento)
+async function stepAssemblyMiniMax(videoId, settings) {
+  const imageAssets = VideoAsset.findByVideoId(videoId, 'image');
+  const audioAssets = VideoAsset.findByVideoId(videoId, 'audio');
+
+  if (imageAssets.length === 0) throw new Error('Imagens nao encontradas para montagem');
+
+  const video = Video.findById(videoId);
+  const resolution = settings.videoResolution || '1080P';
+  const clipDuration = settings.videoDuration || 6;
+
+  // Gera clips de video para cada cena via MiniMax
+  const sceneImages = imageAssets.map(a => ({
+    filePath: a.filePath,
+    prompt: 'Smooth cinematic camera movement with subtle zoom and pan',
+  }));
+
+  console.log(`[Pipeline] Gerando ${sceneImages.length} clips de video via MiniMax...`);
+  const clipResults = await minimaxService.generateSceneVideos(sceneImages, {
+    resolution,
+    duration: clipDuration,
+  });
+
+  // Salva cada clip
+  const clipPaths = [];
+  for (const result of clipResults) {
+    if (!result.success) {
+      console.warn(`[Pipeline] Clip cena ${result.sceneIndex + 1} falhou: ${result.error}`);
+      continue;
+    }
+
+    const filename = `clip_${String(result.sceneIndex + 1).padStart(3, '0')}.mp4`;
+    const filePath = await storageService.saveFile(videoId, 'video', filename, result.buffer);
+    clipPaths.push(filePath);
+  }
+
+  if (clipPaths.length === 0) {
+    throw new Error('Nenhum clip de video foi gerado com sucesso');
+  }
+
+  // Concatena clips + audio com FFmpeg
+  if (!ffmpegService.isInstalled()) {
+    throw new Error('FFmpeg necessario para concatenar clips. Execute: brew install ffmpeg');
+  }
+
+  const rawVideoPath = storageService.getAssetPath(videoId, 'video', 'raw.mp4');
+
+  // Cria arquivo de lista para concat
+  const concatListPath = storageService.getAssetPath(videoId, 'video', 'concat_list.txt');
+  const concatContent = clipPaths.map(p => `file '${p}'`).join('\n');
+  const fs = require('fs');
+  fs.writeFileSync(concatListPath, concatContent);
+
+  // Concatena clips
+  const concatVideoPath = storageService.getAssetPath(videoId, 'video', 'concat.mp4');
+  await ffmpegService.concatenateVideos(concatListPath, concatVideoPath);
+
+  // Substitui audio do video concatenado pelo audio de narracao
+  if (audioAssets.length > 0) {
+    const audioPath = audioAssets[0].filePath;
+    await ffmpegService.replaceAudio(concatVideoPath, audioPath, rawVideoPath);
+  } else {
+    fs.copyFileSync(concatVideoPath, rawVideoPath);
+  }
+
+  VideoAsset.create({
+    videoId,
+    assetType: 'video',
+    filePath: rawVideoPath,
+    fileName: 'raw.mp4',
+    fileSize: storageService.getFileSize(rawVideoPath),
+    mimeType: 'video/mp4',
+  });
+
+  console.log(`[Pipeline] Video montado via MiniMax (${clipPaths.length} clips): raw.mp4`);
 }
 
 // STEP 7: Queimar legendas

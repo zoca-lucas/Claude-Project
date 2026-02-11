@@ -137,8 +137,9 @@ export async function getServicesStatus() {
   return apiFetch('/ai/services-status')
 }
 
-export async function getAiVoices() {
-  return apiFetch('/ai/voices')
+export async function getAiVoices(provider) {
+  const params = provider ? `?provider=${provider}` : ''
+  return apiFetch(`/ai/voices${params}`)
 }
 
 export async function generateVideoScript(videoId) {

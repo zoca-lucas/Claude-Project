@@ -196,6 +196,34 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   return ass;
 }
 
+// Concatena multiplos videos usando arquivo de lista (para MiniMax clips)
+async function concatenateVideos(concatListPath, outputPath) {
+  if (!isInstalled()) {
+    throw new Error('FFmpeg nao esta instalado. Execute: brew install ffmpeg');
+  }
+
+  const cmd = `ffmpeg -y -f concat -safe 0 -i "${concatListPath}" ` +
+    `-c:v libx264 -preset medium -crf 23 -pix_fmt yuv420p ` +
+    `-c:a aac -b:a 192k ` +
+    `"${outputPath}"`;
+
+  return execPromise(cmd);
+}
+
+// Substitui a faixa de audio de um video por outro arquivo de audio
+async function replaceAudio(videoPath, audioPath, outputPath) {
+  if (!isInstalled()) {
+    throw new Error('FFmpeg nao esta instalado. Execute: brew install ffmpeg');
+  }
+
+  const cmd = `ffmpeg -y -i "${videoPath}" -i "${audioPath}" ` +
+    `-map 0:v -map 1:a ` +
+    `-c:v copy -c:a aac -b:a 192k -shortest ` +
+    `"${outputPath}"`;
+
+  return execPromise(cmd);
+}
+
 // Gera thumbnail a partir de um frame do video
 async function generateThumbnail(videoPath, outputPath, atSeconds = 2) {
   const cmd = `ffmpeg -y -i "${videoPath}" -ss ${atSeconds} -frames:v 1 -q:v 2 "${outputPath}"`;
@@ -243,6 +271,8 @@ module.exports = {
   getAudioDuration,
   assembleSlideshow,
   burnSubtitles,
+  concatenateVideos,
+  replaceAudio,
   generateSRT,
   generateASS,
   generateThumbnail,

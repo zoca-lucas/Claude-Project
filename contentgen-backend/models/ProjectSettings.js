@@ -17,6 +17,13 @@ function mapRow(row) {
     captionBgColor: row.caption_bg_color,
     contextText: row.context_text,
     contentLanguage: row.content_language,
+    // Provider settings
+    ttsProvider: row.tts_provider || 'elevenlabs',
+    imageProvider: row.image_provider || 'replicate',
+    videoProvider: row.video_provider || 'ffmpeg',
+    minimaxVoiceId: row.minimax_voice_id,
+    videoResolution: row.video_resolution || '1080P',
+    videoDuration: row.video_duration || 6,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -55,6 +62,13 @@ function upsert(projectId, fields) {
     captionBgColor: 'caption_bg_color',
     contextText: 'context_text',
     contentLanguage: 'content_language',
+    // Provider settings
+    ttsProvider: 'tts_provider',
+    imageProvider: 'image_provider',
+    videoProvider: 'video_provider',
+    minimaxVoiceId: 'minimax_voice_id',
+    videoResolution: 'video_resolution',
+    videoDuration: 'video_duration',
   };
 
   const setClauses = [];

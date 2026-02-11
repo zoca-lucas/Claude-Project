@@ -16,6 +16,7 @@ import StatusBadge from '../components/StatusBadge'
 import EmptyState from '../components/EmptyState'
 import LoadingSpinner from '../components/LoadingSpinner'
 import ErrorAlert from '../components/ErrorAlert'
+import ProjectSettingsPanel from '../components/ProjectSettingsPanel'
 
 export default function ProjectDetailPage() {
   const { id } = useParams()
@@ -303,6 +304,11 @@ export default function ProjectDetailPage() {
         )}
       </div>
 
+      {/* Project Settings (Providers) */}
+      <div className="mb-8">
+        <ProjectSettingsPanel projectId={id} />
+      </div>
+
       {/* Content Queue (Videos) */}
       <div>
         <div className="flex items-center justify-between mb-4">
@@ -405,7 +411,7 @@ export default function ProjectDetailPage() {
               <Sparkles className="w-3 h-3 inline mr-1" />
               {!aiAvailable
                 ? 'Configure as API keys no .env do backend para ativar a geracao com IA.'
-                : 'Para gerar videos completos, configure ELEVENLABS_API_KEY e REPLICATE_API_TOKEN no .env.'}
+                : 'Para gerar videos completos, configure pelo menos um provider de TTS (ElevenLabs ou MiniMax) e um de imagens (Replicate ou MiniMax) no .env.'}
             </p>
           </div>
         )}

@@ -4,12 +4,14 @@ const Video = require('../models/Video');
 const Project = require('../models/Project');
 const GenerationJob = require('../models/GenerationJob');
 const VideoAsset = require('../models/VideoAsset');
+const ProjectSettings = require('../models/ProjectSettings');
 const { authenticateToken } = require('../middleware/auth');
 const { AppError } = require('../middleware/errorHandler');
 const pipeline = require('../services/pipeline');
 const openaiService = require('../services/openai');
 const elevenlabsService = require('../services/elevenlabs');
 const replicateService = require('../services/replicate');
+const minimaxService = require('../services/minimax');
 const ffmpegService = require('../services/ffmpeg');
 
 const router = express.Router();
@@ -29,7 +31,7 @@ function verifyVideoOwnership(req, videoId) {
 // POST /api/videos/:id/generate - Iniciar geracao completa do video
 router.post('/videos/:id/generate', async (req, res, next) => {
   try {
-    const { video } = verifyVideoOwnership(req, req.params.id);
+    const { video, project } = verifyVideoOwnership(req, req.params.id);
 
     // Verifica se ja tem um job em andamento
     const existingJob = GenerationJob.findByVideoId(video.id);
@@ -37,16 +39,31 @@ router.post('/videos/:id/generate', async (req, res, next) => {
       throw new AppError('Ja existe uma geracao em andamento para este video', 409);
     }
 
-    // Verifica servicos necessarios
+    // Busca settings para verificar providers
+    const settings = ProjectSettings.findByProjectId(project.id);
+
+    // Verifica servicos necessarios (OpenAI sempre necessario para roteiro)
     if (!openaiService.isConfigured()) {
       throw new AppError('OPENAI_API_KEY nao configurada', 400);
     }
-    if (!elevenlabsService.isConfigured()) {
+
+    // Verifica TTS provider
+    const ttsProvider = settings.ttsProvider || 'elevenlabs';
+    if (ttsProvider === 'minimax' && !minimaxService.isConfigured()) {
+      throw new AppError('MINIMAX_API_KEY nao configurada (TTS provider: MiniMax)', 400);
+    } else if (ttsProvider === 'elevenlabs' && !elevenlabsService.isConfigured()) {
       throw new AppError('ELEVENLABS_API_KEY nao configurada', 400);
     }
-    if (!replicateService.isConfigured()) {
+
+    // Verifica Image provider
+    const imageProvider = settings.imageProvider || 'replicate';
+    if (imageProvider === 'minimax' && !minimaxService.isConfigured()) {
+      throw new AppError('MINIMAX_API_KEY nao configurada (Image provider: MiniMax)', 400);
+    } else if (imageProvider === 'replicate' && !replicateService.isConfigured()) {
       throw new AppError('REPLICATE_API_TOKEN nao configurado', 400);
     }
+
+    // FFmpeg sempre necessario (assembly ou concat)
     if (!ffmpegService.isInstalled()) {
       throw new AppError('FFmpeg nao esta instalado. Execute: brew install ffmpeg', 400);
     }
@@ -113,23 +130,53 @@ router.post('/videos/:id/retry', async (req, res, next) => {
 
 // GET /api/ai/services-status - Status de todos os servicos de IA
 router.get('/ai/services-status', (req, res) => {
+  const openai = openaiService.isConfigured();
+  const elevenlabs = elevenlabsService.isConfigured();
+  const replicate = replicateService.isConfigured();
+  const minimax = minimaxService.isConfigured();
+  const ffmpeg = ffmpegService.isInstalled();
+
   res.json({
-    openai: openaiService.isConfigured(),
-    elevenlabs: elevenlabsService.isConfigured(),
-    replicate: replicateService.isConfigured(),
-    ffmpeg: ffmpegService.isInstalled(),
-    allConfigured: openaiService.isConfigured() &&
-                   elevenlabsService.isConfigured() &&
-                   replicateService.isConfigured() &&
-                   ffmpegService.isInstalled(),
+    openai,
+    elevenlabs,
+    replicate,
+    minimax,
+    ffmpeg,
+    // Pelo menos um TTS + um image provider + ffmpeg + openai
+    allConfigured: openai &&
+                   (elevenlabs || minimax) &&
+                   (replicate || minimax) &&
+                   ffmpeg,
   });
 });
 
-// GET /api/ai/voices - Lista vozes disponiveis
+// GET /api/ai/voices - Lista vozes disponiveis (ambos providers)
 router.get('/ai/voices', async (req, res, next) => {
   try {
-    const voices = await elevenlabsService.listVoices();
-    res.json({ voices });
+    const provider = req.query.provider || 'all';
+
+    const result = {};
+
+    if (provider === 'all' || provider === 'elevenlabs') {
+      result.elevenlabs = await elevenlabsService.listVoices();
+    }
+
+    if (provider === 'all' || provider === 'minimax') {
+      result.minimax = minimaxService.listVoices();
+    }
+
+    // Formato legado: 'voices' para compatibilidade
+    if (provider === 'elevenlabs') {
+      res.json({ voices: result.elevenlabs });
+    } else if (provider === 'minimax') {
+      res.json({ voices: result.minimax });
+    } else {
+      res.json({
+        voices: result.elevenlabs || [],
+        elevenlabs: result.elevenlabs || [],
+        minimax: result.minimax || [],
+      });
+    }
   } catch (err) {
     next(err);
   }

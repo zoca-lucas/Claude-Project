@@ -243,10 +243,13 @@ export default function VideoDetailPage() {
                   {services?.openai ? '✓' : '✗'} OpenAI (Roteiro + Whisper)
                 </li>
                 <li className={services?.elevenlabs ? 'text-green-400' : 'text-red-400'}>
-                  {services?.elevenlabs ? '✓' : '✗'} ElevenLabs (Narracao)
+                  {services?.elevenlabs ? '✓' : '✗'} ElevenLabs (TTS)
                 </li>
                 <li className={services?.replicate ? 'text-green-400' : 'text-red-400'}>
                   {services?.replicate ? '✓' : '✗'} Replicate (Imagens)
+                </li>
+                <li className={services?.minimax ? 'text-green-400' : 'text-gray-500'}>
+                  {services?.minimax ? '✓' : '○'} MiniMax (TTS/Image/Video)
                 </li>
                 <li className={services?.ffmpeg ? 'text-green-400' : 'text-red-400'}>
                   {services?.ffmpeg ? '✓' : '✗'} FFmpeg (Montagem)

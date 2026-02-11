@@ -28,6 +28,10 @@ const config = {
   // Replicate (geracao de imagens FLUX)
   REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN || '',
 
+  // MiniMax (TTS, imagem, video)
+  MINIMAX_API_KEY: process.env.MINIMAX_API_KEY || '',
+  MINIMAX_GROUP_ID: process.env.MINIMAX_GROUP_ID || '',
+
   // Runway (image-to-video, fase futura)
   RUNWAY_API_KEY: process.env.RUNWAY_API_KEY || '',
 
