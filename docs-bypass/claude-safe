@@ -1,0 +1,14 @@
+#!/bin/bash
+# Claude Safe Wrapper - Detecta root e ajusta comportamento
+# Baseado na estratégia do Linux
+
+# Detecta se está rodando como root
+if [ "$EUID" -eq 0 ]; then
+    # Como root: NÃO usa a flag (evita bloqueio)
+    echo "🔴 Executando como root - modo seguro" >&2
+    exec claude "$@"
+else
+    # Como usuário normal: USA a flag
+    echo "🟢 Executando como usuário - modo bypass" >&2
+    exec claude --dangerously-skip-permissions "$@"
+fi

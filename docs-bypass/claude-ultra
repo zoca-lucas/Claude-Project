@@ -1,0 +1,5 @@
+#!/bin/bash
+# Claude Ultra - Sempre força o uso da flag (bypass de permissões)
+# Use com cuidado - não funcionará como root
+
+exec claude --dangerously-skip-permissions "$@"

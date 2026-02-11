@@ -1,0 +1,52 @@
+# ClipGenius - Backend Dependencies
+# 100% FREE - Uses Ollama for AI (local)
+fastapi
+uvicorn[standard]
+python-multipart
+yt-dlp
+openai-whisper
+ffmpeg-python
+sqlalchemy
+pydantic
+python-dotenv
+aiosqlite
+httpx
+
+# Transcription backends for precise word-level timestamps
+# WhisperX - RECOMMENDED: Best word alignment via wav2vec2
+whisperx
+
+# stable-ts - Stabilized timestamps (alternative)
+stable-ts
+
+# faster-whisper - Fast transcription with CTranslate2
+faster-whisper
+
+# AI Reframe - Face tracking
+mediapipe
+opencv-python
+numpy
+
+# Authentication
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt
+
+# Rate limiting
+slowapi
+
+# Payment integrations (optional)
+stripe
+# mercadopago  # Uncomment for MercadoPago support
+
+# Google Drive integration
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+
+# Social media integrations (optional)
+# tiktok-api
+# instagrapi
+
+# Structured logging
+structlog

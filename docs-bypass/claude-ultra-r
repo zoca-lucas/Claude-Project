@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Claude Ultra Resume - Retoma conversa específica com configurações avançadas
+
+# Cores para output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}🚀 Claude Ultra Resume${NC}"
+
+# Verifica se foi passado um session ID
+if [ $# -eq 0 ]; then
+    echo -e "${CYAN}Seleção interativa de sessão...${NC}"
+    # Sem argumentos - modo interativo
+    claude -r \
+      --permission-mode bypassPermissions \
+      --model opus
+else
+    # Com session ID ou outros argumentos
+    echo -e "${YELLOW}Retomando sessão com configurações avançadas...${NC}"
+    claude -r \
+      --permission-mode bypassPermissions \
+      --model opus \
+      "$@"
+fi
