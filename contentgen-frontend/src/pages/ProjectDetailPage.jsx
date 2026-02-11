@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Pencil, Video, Loader2, Sparkles } from 'lucide-react'
+import {
+  ArrowLeft, Plus, Trash2, Pencil, Video, Loader2, Sparkles, Play, Settings, Eye,
+  Film, RefreshCw, AlertCircle, CheckCircle2, Clock,
+} from 'lucide-react'
 import {
   getProject, deleteProject, updateProject,
   getVideos, createVideo, deleteVideo,
-  generateVideoScript, getAiStatus,
-  formatDate, getPlatformLabel,
+  generateVideoScript, getAiStatus, getServicesStatus,
+  startVideoGeneration, retryGeneration,
+  formatDate, formatDateTime, getPlatformLabel,
+  getVideoStatusLabel, getVideoStatusColor,
 } from '../lib/api'
 import StatusBadge from '../components/StatusBadge'
-import VideoCard from '../components/VideoCard'
 import EmptyState from '../components/EmptyState'
 import LoadingSpinner from '../components/LoadingSpinner'
 import ErrorAlert from '../components/ErrorAlert'
@@ -23,13 +27,15 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
-  // Status da IA
+  // Status dos servicos de IA
   const [aiAvailable, setAiAvailable] = useState(false)
+  const [servicesStatus, setServicesStatus] = useState(null)
 
   // Form novo video
   const [showVideoForm, setShowVideoForm] = useState(false)
   const [videoTitle, setVideoTitle] = useState('')
   const [videoScript, setVideoScript] = useState('')
+  const [videoContentType, setVideoContentType] = useState('long')
   const [videoLoading, setVideoLoading] = useState(false)
 
   // Edicao do projeto
@@ -37,9 +43,12 @@ export default function ProjectDetailPage() {
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
 
+  // Loading por video
+  const [generatingIds, setGeneratingIds] = useState(new Set())
+
   useEffect(() => {
     loadData()
-    checkAiStatus()
+    checkServices()
   }, [id])
 
   // Limpa mensagem de sucesso apos 5 segundos
@@ -50,10 +59,14 @@ export default function ProjectDetailPage() {
     }
   }, [successMsg])
 
-  async function checkAiStatus() {
+  async function checkServices() {
     try {
-      const data = await getAiStatus()
-      setAiAvailable(data.configurado)
+      const [aiData, servData] = await Promise.all([
+        getAiStatus().catch(() => ({ configurado: false })),
+        getServicesStatus().catch(() => null),
+      ])
+      setAiAvailable(aiData.configurado)
+      setServicesStatus(servData)
     } catch {
       setAiAvailable(false)
     }
@@ -101,7 +114,11 @@ export default function ProjectDetailPage() {
     e.preventDefault()
     setVideoLoading(true)
     try {
-      const data = await createVideo(id, { title: videoTitle, script: videoScript || undefined })
+      const data = await createVideo(id, {
+        title: videoTitle,
+        script: videoScript || undefined,
+        contentType: videoContentType,
+      })
       setVideos((prev) => [data.video, ...prev])
       setVideoTitle('')
       setVideoScript('')
@@ -125,9 +142,9 @@ export default function ProjectDetailPage() {
 
   async function handleGenerateScript(videoId) {
     setError('')
+    setGeneratingIds(prev => new Set([...prev, videoId]))
     try {
       const data = await generateVideoScript(videoId)
-      // Atualiza o video na lista local
       setVideos((prev) =>
         prev.map((v) => (v.id === videoId ? data.video : v))
       )
@@ -136,7 +153,45 @@ export default function ProjectDetailPage() {
       )
     } catch (err) {
       setError(err.message)
+    } finally {
+      setGeneratingIds(prev => { const s = new Set(prev); s.delete(videoId); return s })
     }
+  }
+
+  async function handleStartGeneration(videoId) {
+    setError('')
+    setGeneratingIds(prev => new Set([...prev, videoId]))
+    try {
+      const data = await startVideoGeneration(videoId)
+      setVideos((prev) =>
+        prev.map((v) => (v.id === videoId ? data.video : v))
+      )
+      setSuccessMsg('Geracao de video iniciada!')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setGeneratingIds(prev => { const s = new Set(prev); s.delete(videoId); return s })
+    }
+  }
+
+  async function handleRetry(videoId) {
+    setError('')
+    setGeneratingIds(prev => new Set([...prev, videoId]))
+    try {
+      const data = await retryGeneration(videoId)
+      setVideos((prev) =>
+        prev.map((v) => (v.id === videoId ? data.video : v))
+      )
+      setSuccessMsg('Retentativa iniciada!')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setGeneratingIds(prev => { const s = new Set(prev); s.delete(videoId); return s })
+    }
+  }
+
+  function isGeneratingStatus(status) {
+    return ['video_generating', 'audio_generating', 'images_generating', 'video_assembling'].includes(status)
   }
 
   if (loading) return <LoadingSpinner />
@@ -231,7 +286,13 @@ export default function ProjectDetailPage() {
                 <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">{project.niche}</span>
               )}
               <span className="text-xs text-gray-500">Criado em {formatDate(project.createdAt)}</span>
-              {aiAvailable && (
+              {servicesStatus?.allConfigured && (
+                <span className="inline-flex items-center gap-1 text-xs bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded">
+                  <Sparkles className="w-3 h-3" />
+                  Pipeline Ativo
+                </span>
+              )}
+              {aiAvailable && !servicesStatus?.allConfigured && (
                 <span className="inline-flex items-center gap-1 text-xs bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded">
                   <Sparkles className="w-3 h-3" />
                   IA Ativa
@@ -242,16 +303,16 @@ export default function ProjectDetailPage() {
         )}
       </div>
 
-      {/* Videos */}
+      {/* Content Queue (Videos) */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Videos ({videos.length})</h2>
+          <h2 className="text-lg font-semibold text-white">Content Queue ({videos.length})</h2>
           <button
             onClick={() => setShowVideoForm(!showVideoForm)}
             className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
-            Novo Video
+            Criar +
           </button>
         </div>
 
@@ -269,6 +330,39 @@ export default function ProjectDetailPage() {
                 className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
               />
             </div>
+
+            <div>
+              <label className="block text-sm text-gray-400 mb-1.5">Tipo de conteudo</label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setVideoContentType('long')}
+                  className={`flex-1 px-4 py-3 rounded-lg border text-sm font-medium transition-all ${
+                    videoContentType === 'long'
+                      ? 'border-violet-500 bg-violet-500/10 text-violet-400'
+                      : 'border-gray-600 bg-gray-900 text-gray-400 hover:border-gray-500'
+                  }`}
+                >
+                  <Film className="w-5 h-5 mx-auto mb-1" />
+                  Long-Form
+                  <span className="block text-xs mt-0.5 opacity-60">8-12 min</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVideoContentType('short')}
+                  className={`flex-1 px-4 py-3 rounded-lg border text-sm font-medium transition-all ${
+                    videoContentType === 'short'
+                      ? 'border-violet-500 bg-violet-500/10 text-violet-400'
+                      : 'border-gray-600 bg-gray-900 text-gray-400 hover:border-gray-500'
+                  }`}
+                >
+                  <Video className="w-5 h-5 mx-auto mb-1" />
+                  Short-Form
+                  <span className="block text-xs mt-0.5 opacity-60">30-60s</span>
+                </button>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">
                 Script (opcional)
@@ -304,12 +398,14 @@ export default function ProjectDetailPage() {
           </form>
         )}
 
-        {/* Info de IA desativada */}
-        {!aiAvailable && videos.length > 0 && (
+        {/* Info de servicos nao configurados */}
+        {!servicesStatus?.allConfigured && videos.length > 0 && (
           <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg px-4 py-3 mb-4">
             <p className="text-xs text-gray-500">
               <Sparkles className="w-3 h-3 inline mr-1" />
-              Para gerar roteiros com IA, configure a OPENAI_API_KEY no arquivo .env do backend.
+              {!aiAvailable
+                ? 'Configure as API keys no .env do backend para ativar a geracao com IA.'
+                : 'Para gerar videos completos, configure ELEVENLABS_API_KEY e REPLICATE_API_TOKEN no .env.'}
             </p>
           </div>
         )}
@@ -318,21 +414,117 @@ export default function ProjectDetailPage() {
           <EmptyState
             icon={Video}
             title="Nenhum video neste projeto"
-            description={aiAvailable
-              ? 'Adicione um video e gere o roteiro automaticamente com IA'
+            description={servicesStatus?.allConfigured
+              ? 'Crie um video e gere conteudo faceless automaticamente com IA'
               : 'Adicione videos para comecar a gerar conteudo'}
           />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {videos.map((video) => (
-              <VideoCard
-                key={video.id}
-                video={video}
-                onDelete={handleDeleteVideo}
-                onGenerateScript={handleGenerateScript}
-                aiAvailable={aiAvailable}
-              />
-            ))}
+          /* TABLE VIEW - Calliope-style */
+          <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-700">
+                  <th className="text-left text-xs font-medium text-gray-500 px-5 py-3">Video</th>
+                  <th className="text-left text-xs font-medium text-gray-500 px-3 py-3">Tipo</th>
+                  <th className="text-left text-xs font-medium text-gray-500 px-3 py-3">Data</th>
+                  <th className="text-left text-xs font-medium text-gray-500 px-3 py-3">Status</th>
+                  <th className="text-right text-xs font-medium text-gray-500 px-5 py-3">Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {videos.map((video) => {
+                  const isGen = generatingIds.has(video.id)
+                  const isActive = isGeneratingStatus(video.status)
+                  const canGenerateScript = aiAvailable && video.status === 'pending' && !video.script
+                  const canGenerateVideo = servicesStatus?.allConfigured && (video.status === 'pending' || video.status === 'script_generated')
+                  const canRetry = video.status === 'error'
+
+                  return (
+                    <tr
+                      key={video.id}
+                      className="border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors"
+                    >
+                      <td className="px-5 py-3.5">
+                        <Link
+                          to={`/videos/${video.id}`}
+                          className="text-sm text-white font-medium hover:text-violet-400 transition-colors"
+                        >
+                          {video.title}
+                        </Link>
+                        {video.script && (
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
+                            {video.script.substring(0, 80)}...
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-3 py-3.5">
+                        <span className="text-xs text-gray-400">
+                          {video.contentType === 'short' ? 'Short' : 'Long'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3.5">
+                        <span className="text-xs text-gray-500">{formatDate(video.createdAt)}</span>
+                      </td>
+                      <td className="px-3 py-3.5">
+                        <StatusBadge status={video.status} type="video" />
+                        {isActive && (
+                          <Loader2 className="w-3 h-3 text-violet-400 animate-spin inline ml-1.5" />
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center justify-end gap-1">
+                          {canGenerateVideo && (
+                            <button
+                              onClick={() => handleStartGeneration(video.id)}
+                              disabled={isGen}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-violet-600/20 text-violet-400 hover:bg-violet-600/30 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                              title="Gerar video completo com IA"
+                            >
+                              {isGen ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                              Gerar Video
+                            </button>
+                          )}
+                          {canGenerateScript && !canGenerateVideo && (
+                            <button
+                              onClick={() => handleGenerateScript(video.id)}
+                              disabled={isGen}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                              title="Gerar apenas roteiro"
+                            >
+                              {isGen ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                              Gerar Script
+                            </button>
+                          )}
+                          {canRetry && (
+                            <button
+                              onClick={() => handleRetry(video.id)}
+                              disabled={isGen}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              Retry
+                            </button>
+                          )}
+                          <Link
+                            to={`/videos/${video.id}`}
+                            className="p-1.5 text-gray-500 hover:text-white rounded transition-colors"
+                            title="Ver detalhes"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteVideo(video.id)}
+                            className="p-1.5 text-gray-500 hover:text-red-400 rounded transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

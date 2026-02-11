@@ -10,6 +10,8 @@ function mapRow(row) {
     title: row.title,
     script: row.script,
     status: row.status,
+    contentType: row.content_type || 'long',
+    sceneData: row.scene_data ? JSON.parse(row.scene_data) : null,
     videoUrl: row.video_url,
     thumbnailUrl: row.thumbnail_url,
     errorMessage: row.error_message,
@@ -67,6 +69,8 @@ function update(id, fields) {
     title: 'title',
     script: 'script',
     status: 'status',
+    contentType: 'content_type',
+    sceneData: 'scene_data',
     videoUrl: 'video_url',
     thumbnailUrl: 'thumbnail_url',
     errorMessage: 'error_message',
@@ -80,7 +84,11 @@ function update(id, fields) {
   for (const [jsKey, dbCol] of Object.entries(allowedFields)) {
     if (fields[jsKey] !== undefined) {
       setClauses.push(`${dbCol} = ?`);
-      values.push(fields[jsKey]);
+      // Serializa objetos JSON (sceneData)
+      const val = (jsKey === 'sceneData' && typeof fields[jsKey] === 'object')
+        ? JSON.stringify(fields[jsKey])
+        : fields[jsKey];
+      values.push(val);
     }
   }
 

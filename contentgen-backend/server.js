@@ -2,6 +2,7 @@
 const config = require('./config/env');
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { initDb } = require('./config/database');
 const { errorHandler } = require('./middleware/errorHandler');
 
@@ -9,6 +10,9 @@ const { errorHandler } = require('./middleware/errorHandler');
 const authRoutes = require('./routes/auth');
 const projectRoutes = require('./routes/projects');
 const videoRoutes = require('./routes/videos');
+const generationRoutes = require('./routes/generation');
+const projectSettingsRoutes = require('./routes/projectSettings');
+const assetsRoutes = require('./routes/assets');
 
 const app = express();
 
@@ -16,6 +20,9 @@ const app = express();
 app.use(cors({ origin: config.CORS_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Servir arquivos estaticos de storage (videos, imagens, audio)
+app.use('/storage', express.static(config.STORAGE_PATH));
 
 // Log de requisicoes
 app.use((req, res, next) => {
@@ -30,6 +37,9 @@ initDb();
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api', videoRoutes);
+app.use('/api', generationRoutes);
+app.use('/api', projectSettingsRoutes);
+app.use('/api', assetsRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -40,8 +50,8 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     nome: 'ContentGen API',
-    versao: '1.0.0',
-    descricao: 'Plataforma de geracao de conteudo com IA',
+    versao: '2.0.0',
+    descricao: 'Plataforma de geracao de conteudo faceless com IA',
   });
 });
 

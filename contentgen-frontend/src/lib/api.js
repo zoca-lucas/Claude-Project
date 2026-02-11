@@ -1,4 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api'
+const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const TOKEN_KEY = 'contentgen_token'
 
 // Wrapper para fetch com token e tratamento de erros
@@ -87,6 +88,18 @@ export async function deleteProject(id) {
   return apiFetch(`/projects/${id}`, { method: 'DELETE' })
 }
 
+// === Project Settings ===
+export async function getProjectSettings(projectId) {
+  return apiFetch(`/projects/${projectId}/settings`)
+}
+
+export async function updateProjectSettings(projectId, settings) {
+  return apiFetch(`/projects/${projectId}/settings`, {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  })
+}
+
 // === Videos ===
 export async function getVideos(projectId, status) {
   const params = status ? `?status=${status}` : ''
@@ -97,10 +110,10 @@ export async function getVideo(id) {
   return apiFetch(`/videos/${id}`)
 }
 
-export async function createVideo(projectId, { title, script }) {
+export async function createVideo(projectId, { title, script, contentType }) {
   return apiFetch(`/projects/${projectId}/videos`, {
     method: 'POST',
-    body: JSON.stringify({ title, script }),
+    body: JSON.stringify({ title, script, contentType }),
   })
 }
 
@@ -120,8 +133,49 @@ export async function getAiStatus() {
   return apiFetch('/ai/status')
 }
 
+export async function getServicesStatus() {
+  return apiFetch('/ai/services-status')
+}
+
+export async function getAiVoices() {
+  return apiFetch('/ai/voices')
+}
+
 export async function generateVideoScript(videoId) {
   return apiFetch(`/videos/${videoId}/generate-script`, { method: 'POST' })
+}
+
+// === Pipeline de video ===
+export async function startVideoGeneration(videoId) {
+  return apiFetch(`/videos/${videoId}/generate`, { method: 'POST' })
+}
+
+export async function getGenerationStatus(videoId) {
+  return apiFetch(`/videos/${videoId}/generation-status`)
+}
+
+export async function retryGeneration(videoId) {
+  return apiFetch(`/videos/${videoId}/retry`, { method: 'POST' })
+}
+
+// === Assets ===
+export async function getVideoAssets(videoId, type) {
+  const params = type ? `?type=${type}` : ''
+  return apiFetch(`/videos/${videoId}/assets${params}`)
+}
+
+export function getAssetStreamUrl(assetId) {
+  const token = localStorage.getItem(TOKEN_KEY)
+  return `${API_BASE}/assets/${assetId}/stream?token=${token}`
+}
+
+export function getAssetDownloadUrl(assetId) {
+  const token = localStorage.getItem(TOKEN_KEY)
+  return `${API_BASE}/assets/${assetId}/download?token=${token}`
+}
+
+export function getStorageUrl(relativePath) {
+  return `${BACKEND_BASE}${relativePath}`
 }
 
 // === Helpers ===
@@ -147,7 +201,11 @@ export function getVideoStatusLabel(status) {
   const labels = {
     pending: 'Pendente',
     script_generated: 'Script Pronto',
+    audio_generating: 'Gerando Audio',
+    images_generating: 'Gerando Imagens',
+    images_done: 'Imagens Prontas',
     video_generating: 'Gerando Video',
+    video_assembling: 'Montando Video',
     done: 'Concluido',
     error: 'Erro',
   }
@@ -158,7 +216,11 @@ export function getVideoStatusColor(status) {
   const colors = {
     pending: 'bg-gray-500/10 text-gray-400',
     script_generated: 'bg-blue-500/10 text-blue-400',
+    audio_generating: 'bg-violet-500/10 text-violet-400',
+    images_generating: 'bg-amber-500/10 text-amber-400',
+    images_done: 'bg-cyan-500/10 text-cyan-400',
     video_generating: 'bg-yellow-500/10 text-yellow-400',
+    video_assembling: 'bg-orange-500/10 text-orange-400',
     done: 'bg-green-500/10 text-green-400',
     error: 'bg-red-500/10 text-red-400',
   }
@@ -178,4 +240,15 @@ export function formatDate(isoString) {
   })
 }
 
-export { TOKEN_KEY }
+export function formatDateTime(isoString) {
+  if (!isoString) return ''
+  return new Date(isoString).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+export { TOKEN_KEY, API_BASE, BACKEND_BASE }
