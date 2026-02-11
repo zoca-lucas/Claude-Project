@@ -1,10 +1,11 @@
-// Rotas CRUD de videos
+// Rotas CRUD de videos + geracao de roteiro com IA
 const express = require('express');
 const Video = require('../models/Video');
 const Project = require('../models/Project');
 const { authenticateToken } = require('../middleware/auth');
 const { validateVideo, validateVideoUpdate } = require('../middleware/validate');
 const { AppError } = require('../middleware/errorHandler');
+const openaiService = require('../services/openai');
 
 const router = express.Router();
 
@@ -94,6 +95,57 @@ router.delete('/videos/:id', (req, res, next) => {
     Video.remove(req.params.id);
     res.status(204).end();
   } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/ai/status - Verificar se IA esta configurada
+router.get('/ai/status', (req, res) => {
+  res.json({
+    configurado: openaiService.isConfigured(),
+    modelo: 'gpt-4o-mini',
+  });
+});
+
+// POST /api/videos/:id/generate-script - Gerar roteiro com IA
+router.post('/videos/:id/generate-script', async (req, res, next) => {
+  try {
+    if (!openaiService.isConfigured()) {
+      throw new AppError('OPENAI_API_KEY nao configurada. Adicione no arquivo .env do backend.', 400);
+    }
+
+    const video = verifyVideoOwnership(req, req.params.id);
+    const project = Project.findById(video.projectId);
+
+    // Gera o roteiro usando OpenAI
+    const result = await openaiService.generateScript({
+      title: video.title,
+      niche: project.niche,
+      platform: project.targetPlatform,
+      description: project.description,
+    });
+
+    // Atualiza o video com o roteiro gerado e muda status
+    const updated = Video.update(req.params.id, {
+      script: result.script,
+      status: 'script_generated',
+    });
+
+    res.json({
+      video: updated,
+      ia: {
+        modelo: result.model,
+        tokensUsados: result.tokensUsed,
+      },
+    });
+  } catch (err) {
+    // Se for erro da OpenAI, formata melhor
+    if (err.status === 401) {
+      return next(new AppError('Chave da OpenAI invalida. Verifique no .env.', 401));
+    }
+    if (err.status === 429) {
+      return next(new AppError('Limite de requisicoes da OpenAI atingido. Tente novamente em alguns minutos.', 429));
+    }
     next(err);
   }
 });

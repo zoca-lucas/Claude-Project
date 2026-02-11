@@ -115,6 +115,15 @@ export async function deleteVideo(id) {
   return apiFetch(`/videos/${id}`, { method: 'DELETE' })
 }
 
+// === IA / Geracao ===
+export async function getAiStatus() {
+  return apiFetch('/ai/status')
+}
+
+export async function generateVideoScript(videoId) {
+  return apiFetch(`/videos/${videoId}/generate-script`, { method: 'POST' })
+}
+
 // === Helpers ===
 export function getProjectStatusLabel(status) {
   const labels = {

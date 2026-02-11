@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Pencil, Video, Loader2 } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Video, Loader2, Sparkles } from 'lucide-react'
 import {
   getProject, deleteProject, updateProject,
   getVideos, createVideo, deleteVideo,
+  generateVideoScript, getAiStatus,
   formatDate, getPlatformLabel,
 } from '../lib/api'
 import StatusBadge from '../components/StatusBadge'
@@ -20,6 +21,10 @@ export default function ProjectDetailPage() {
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
+
+  // Status da IA
+  const [aiAvailable, setAiAvailable] = useState(false)
 
   // Form novo video
   const [showVideoForm, setShowVideoForm] = useState(false)
@@ -34,7 +39,25 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     loadData()
+    checkAiStatus()
   }, [id])
+
+  // Limpa mensagem de sucesso apos 5 segundos
+  useEffect(() => {
+    if (successMsg) {
+      const timer = setTimeout(() => setSuccessMsg(''), 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [successMsg])
+
+  async function checkAiStatus() {
+    try {
+      const data = await getAiStatus()
+      setAiAvailable(data.configurado)
+    } catch {
+      setAiAvailable(false)
+    }
+  }
 
   async function loadData() {
     try {
@@ -100,6 +123,22 @@ export default function ProjectDetailPage() {
     }
   }
 
+  async function handleGenerateScript(videoId) {
+    setError('')
+    try {
+      const data = await generateVideoScript(videoId)
+      // Atualiza o video na lista local
+      setVideos((prev) =>
+        prev.map((v) => (v.id === videoId ? data.video : v))
+      )
+      setSuccessMsg(
+        `Roteiro gerado com sucesso! (${data.ia.modelo} - ${data.ia.tokensUsados} tokens)`
+      )
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   if (loading) return <LoadingSpinner />
 
   if (!project) {
@@ -124,6 +163,14 @@ export default function ProjectDetailPage() {
       </Link>
 
       <ErrorAlert message={error} />
+
+      {/* Mensagem de sucesso */}
+      {successMsg && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-lg px-4 py-3 mb-4 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-green-400 flex-shrink-0" />
+          <p className="text-sm text-green-400">{successMsg}</p>
+        </div>
+      )}
 
       {/* Header do projeto */}
       <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-8">
@@ -184,6 +231,12 @@ export default function ProjectDetailPage() {
                 <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">{project.niche}</span>
               )}
               <span className="text-xs text-gray-500">Criado em {formatDate(project.createdAt)}</span>
+              {aiAvailable && (
+                <span className="inline-flex items-center gap-1 text-xs bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded">
+                  <Sparkles className="w-3 h-3" />
+                  IA Ativa
+                </span>
+              )}
             </div>
           </>
         )}
@@ -217,7 +270,12 @@ export default function ProjectDetailPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">Script (opcional)</label>
+              <label className="block text-sm text-gray-400 mb-1.5">
+                Script (opcional)
+                {aiAvailable && (
+                  <span className="text-violet-400 ml-1">— ou gere com IA depois</span>
+                )}
+              </label>
               <textarea
                 placeholder="Roteiro do video..."
                 value={videoScript}
@@ -246,11 +304,23 @@ export default function ProjectDetailPage() {
           </form>
         )}
 
+        {/* Info de IA desativada */}
+        {!aiAvailable && videos.length > 0 && (
+          <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg px-4 py-3 mb-4">
+            <p className="text-xs text-gray-500">
+              <Sparkles className="w-3 h-3 inline mr-1" />
+              Para gerar roteiros com IA, configure a OPENAI_API_KEY no arquivo .env do backend.
+            </p>
+          </div>
+        )}
+
         {videos.length === 0 ? (
           <EmptyState
             icon={Video}
             title="Nenhum video neste projeto"
-            description="Adicione videos para comecar a gerar conteudo"
+            description={aiAvailable
+              ? 'Adicione um video e gere o roteiro automaticamente com IA'
+              : 'Adicione videos para comecar a gerar conteudo'}
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -259,6 +329,8 @@ export default function ProjectDetailPage() {
                 key={video.id}
                 video={video}
                 onDelete={handleDeleteVideo}
+                onGenerateScript={handleGenerateScript}
+                aiAvailable={aiAvailable}
               />
             ))}
           </div>
