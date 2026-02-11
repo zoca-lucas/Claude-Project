@@ -1,6 +1,7 @@
 // Rotas CRUD de projetos
 const express = require('express');
 const Project = require('../models/Project');
+const { getDb } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
 const { validateProject, validateProjectUpdate } = require('../middleware/validate');
 const { AppError } = require('../middleware/errorHandler');
@@ -21,6 +22,66 @@ router.get('/', (req, res, next) => {
     const total = Project.countByUserId(req.user.id);
 
     res.json({ projetos, total, pagina: page, limite: limit });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/projects/dashboard-stats - Estatisticas para o dashboard
+router.get('/dashboard-stats', (req, res, next) => {
+  try {
+    const db = getDb();
+    const userId = req.user.id;
+
+    // Total de projetos do usuario
+    const projectCount = Project.countByUserId(userId);
+
+    // Total de videos e contagem por status
+    const videoStats = db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN v.status = 'done' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN v.status = 'error' THEN 1 ELSE 0 END) as errors,
+        SUM(CASE WHEN v.status IN ('video_generating','audio_generating','images_generating','video_assembling') THEN 1 ELSE 0 END) as generating,
+        SUM(CASE WHEN v.status = 'pending' THEN 1 ELSE 0 END) as pending
+      FROM videos v
+      INNER JOIN projects p ON v.project_id = p.id
+      WHERE p.user_id = ?
+    `).get(userId);
+
+    // Videos recentes (ultimos 5 com status ativo ou concluido)
+    const recentVideos = db.prepare(`
+      SELECT v.id, v.title, v.status, v.content_type, v.created_at, v.video_url,
+             p.id as project_id, p.name as project_name
+      FROM videos v
+      INNER JOIN projects p ON v.project_id = p.id
+      WHERE p.user_id = ?
+      ORDER BY v.created_at DESC
+      LIMIT 8
+    `).all(userId).map(row => ({
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      contentType: row.content_type || 'long',
+      createdAt: row.created_at,
+      videoUrl: row.video_url,
+      projectId: row.project_id,
+      projectName: row.project_name,
+    }));
+
+    res.json({
+      projects: {
+        total: projectCount,
+      },
+      videos: {
+        total: videoStats.total || 0,
+        completed: videoStats.completed || 0,
+        errors: videoStats.errors || 0,
+        generating: videoStats.generating || 0,
+        pending: videoStats.pending || 0,
+      },
+      recentVideos,
+    });
   } catch (err) {
     next(err);
   }

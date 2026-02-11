@@ -61,11 +61,13 @@ router.post('/projects/:projectId/videos', validateVideo, (req, res, next) => {
   try {
     verifyProjectOwnership(req, req.params.projectId);
 
-    const { title, script } = req.body;
+    const { title, script, contentType } = req.body;
     const video = Video.create({
       projectId: req.params.projectId,
       title,
       script,
+      contentType: contentType || 'long',
+      status: script ? 'script_generated' : 'pending',
     });
 
     res.status(201).json({ video });

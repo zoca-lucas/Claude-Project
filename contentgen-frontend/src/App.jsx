@@ -9,6 +9,7 @@ import ProjectsPage from './pages/ProjectsPage'
 import NewProjectPage from './pages/NewProjectPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import VideoDetailPage from './pages/VideoDetailPage'
+import CreationLabPage from './pages/CreationLabPage'
 import NotFoundPage from './pages/NotFoundPage'
 
 function RootLayout() {
@@ -40,6 +41,7 @@ const router = createBrowserRouter([
           { path: 'projects/new', element: <NewProjectPage /> },
           { path: 'projects/:id', element: <ProjectDetailPage /> },
           { path: 'videos/:id', element: <VideoDetailPage /> },
+          { path: 'create', element: <CreationLabPage /> },
         ],
       },
       { path: '*', element: <NotFoundPage /> },

@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Zap, LayoutDashboard, FolderOpen, LogOut } from 'lucide-react'
+import { Zap, LayoutDashboard, FolderOpen, LogOut, Wand2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Header() {
@@ -30,6 +30,13 @@ export default function Header() {
               >
                 <LayoutDashboard className="w-4 h-4" />
                 Dashboard
+              </Link>
+              <Link
+                to="/create"
+                className="flex items-center gap-1.5 text-sm text-violet-400 hover:text-violet-300 transition-colors"
+              >
+                <Wand2 className="w-4 h-4" />
+                Creation Lab
               </Link>
               <Link
                 to="/projects"

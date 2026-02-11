@@ -66,6 +66,10 @@ export async function getProjects(page = 1, limit = 20) {
   return apiFetch(`/projects?page=${page}&limit=${limit}`)
 }
 
+export async function getDashboardStats() {
+  return apiFetch('/projects/dashboard-stats')
+}
+
 export async function getProject(id) {
   return apiFetch(`/projects/${id}`)
 }

@@ -54,11 +54,11 @@ function countByProjectId(projectId) {
 }
 
 // Cria novo video
-function create({ projectId, title, script, status }) {
+function create({ projectId, title, script, status, contentType }) {
   const db = getDb();
   const result = db.prepare(
-    'INSERT INTO videos (project_id, title, script, status) VALUES (?, ?, ?, ?)'
-  ).run(projectId, title, script || null, status || 'pending');
+    'INSERT INTO videos (project_id, title, script, status, content_type) VALUES (?, ?, ?, ?, ?)'
+  ).run(projectId, title, script || null, status || 'pending', contentType || 'long');
   return findById(result.lastInsertRowid);
 }
 
